@@ -1,21 +1,28 @@
 # WebMirror
 
-WebMirror is a Cloudflare Workers based mirror gateway for Chinese Wikipedia and common Wikimedia static resources. It is designed to help users in mainland China reach public knowledge resources for reading, learning, citation checking, and academic research.
+WebMirror 是一个基于 Cloudflare Workers 的网页镜像项目，当前主要用于镜像中文维基百科以及常见 Wikimedia 静态资源。项目目标是帮助中国大陆用户更稳定地访问公开知识内容，用于阅读、学习、资料查证、引用核验和学术研究。
 
-The project focuses on open knowledge access. It does not modify article content, does not provide account services, and should be deployed responsibly with respect for Wikimedia's community norms, copyright rules, and terms of use.
+WebMirror 关注的是公共知识的可达性。它不会修改百科正文内容，不提供独立账号系统，也不应该被用于冒充 Wikimedia 官方站点、诱导用户输入敏感信息或进行高强度抓取。
 
-## Features
+## 项目定位
 
-- Mirrors `zh.wikipedia.org` as the default upstream site.
-- Proxies common Wikimedia resource domains through fixed path prefixes.
-- Rewrites HTML, CSS, JavaScript, JSON, and redirect links so browsing stays under the mirror domain.
-- Handles static asset caching with Cloudflare edge cache and browser cache headers.
-- Removes upstream security headers that are bound to the original domains and would otherwise block mirrored rendering.
-- Includes conservative cookie rewriting for session compatibility.
+- 面向中文用户，降低访问公开知识资源的技术门槛。
+- 服务学习、教学、科研、资料检索和公共知识保存。
+- 使用 Cloudflare Workers 做轻量级反向代理，不需要自建服务器。
+- 使用固定域名映射，避免把服务变成任意开放代理。
 
-## Route Mapping
+## 主要功能
 
-| Mirror path | Upstream |
+- 默认镜像 `zh.wikipedia.org`。
+- 代理常见 Wikimedia 图片、样式、脚本、地图、元维基、共享资源等域名。
+- 自动改写 HTML、CSS、JavaScript、JSON 和重定向中的链接，使浏览过程保持在镜像域名下。
+- 对图片、字体、样式、脚本等静态资源启用缓存，提高重复访问速度。
+- 移除原站绑定域名的 CSP、HSTS、X-Frame-Options 等响应头，避免镜像页面加载失败。
+- 对 Cookie 做保守改写，尽量改善会话兼容性。
+
+## 路由映射
+
+| 镜像路径 | 上游地址 |
 | --- | --- |
 | `/` | `https://zh.wikipedia.org/` |
 | `/upload_wikimedia/` | `https://upload.wikimedia.org/` |
@@ -28,51 +35,82 @@ The project focuses on open knowledge access. It does not modify article content
 | `/www_wikipedia/` | `https://www.wikipedia.org/` |
 | `/api_rest/` | `https://api.wikimedia.org/` |
 
-## Login Notes
+## 关于登录
 
-WebMirror includes best-effort login compatibility:
+代码中包含“尽力而为”的登录兼容处理：
 
-- `login.wikimedia.org` is proxied through `/login_wikimedia/`.
-- Redirects are rewritten back to the mirror domain.
-- `Set-Cookie` headers are adjusted so cookies can be stored under the mirror domain.
-- Dynamic and login-related responses are marked `private, no-store`.
+- `login.wikimedia.org` 会通过 `/login_wikimedia/` 转发。
+- 上游重定向会被改写回当前镜像域名。
+- `Set-Cookie` 会移除原始 `Domain`，让浏览器可以把 Cookie 写入镜像域名。
+- 登录、动态页面和会话相关响应会设置为 `private, no-store`，避免缓存污染。
 
-This does not guarantee full Wikimedia login support. Wikimedia uses unified login, CSRF tokens, central authentication cookies, and strict browser security behavior across multiple domains. For account-sensitive actions such as editing, uploading, account recovery, or password changes, use the official Wikimedia domains directly whenever possible.
+但这不等于完整支持 Wikimedia 登录。Wikimedia 使用统一登录、跨域 Cookie、CSRF Token 和多域名认证流程，镜像站很难保证编辑、上传、账号恢复、密码修改等操作稳定可靠。涉及账号安全的操作，建议直接访问 Wikimedia 官方域名完成。
 
-## Deployment
+## 部署方式
 
-Install dependencies:
+安装依赖：
 
 ```bash
 npm install
 ```
 
-Deploy with Wrangler:
-
-```bash
-npm run deploy
-```
-
-For quick testing:
+本地调试：
 
 ```bash
 npm run dev
 ```
 
-Before public use, bind the Worker to a custom HTTPS domain in Cloudflare. A stable domain improves cookie behavior and avoids unnecessary origin changes.
+部署到 Cloudflare Workers：
 
-## Configuration
+```bash
+npm run deploy
+```
 
-The Worker does not require environment variables. Edit `src/worker.js` if you want to add or remove upstream domains.
+部署后建议绑定自定义 HTTPS 域名。稳定域名有助于 Cookie、缓存和浏览器安全策略保持一致。
 
-Keep route prefixes fixed and explicit. Do not turn this into an arbitrary open proxy.
+## 文件结构
 
-## Responsible Use
+```txt
+webmirror/
+├── src/worker.js        # Cloudflare Worker 主代码
+├── optimized-worker.js  # 兼容入口，导出 src/worker.js
+├── wrangler.toml        # Cloudflare Workers 配置
+├── package.json         # 项目脚本和依赖
+├── README.md            # 中文说明文档
+└── LICENSE              # MIT License
+```
 
-This project is intended for positive, research-oriented access to public educational content. Please use it to support reading, study, teaching, citation verification, and public-interest knowledge preservation.
+## 配置说明
 
-Do not use WebMirror to impersonate Wikimedia, mislead users, harvest credentials, bypass account restrictions, or mass-scrape content in ways that burden upstream services.
+默认不需要环境变量。需要增加或移除上游域名时，编辑 `src/worker.js` 里的 `ROUTES` 和 `HOST_TO_PREFIX` 相关配置即可。
 
-## License
+建议保持路由前缀固定、明确，不要改造成任意 URL 都可代理的开放代理。
+
+## 正向使用
+
+WebMirror 的初衷是帮助更多人平等、稳定地接触公开知识。欢迎将它用于：
+
+- 学术研究和文献核验；
+- 课堂教学和知识普及；
+- 个人学习和资料检索；
+- 公共知识的备份、整理和引用检查。
+
+请不要将本项目用于钓鱼、冒充官方服务、收集账号凭据、绕过账号限制，或进行会给上游服务造成压力的大规模抓取。
+
+## GitHub About 建议
+
+仓库简介可以填写：
+
+```txt
+基于 Cloudflare Workers 的中文维基百科镜像网关，帮助大陆用户访问公开知识资源，用于学习、资料查证和学术研究。
+```
+
+推荐 Topics：
+
+```txt
+cloudflare-workers, wikipedia, wikimedia, mirror, proxy, knowledge-access, research, chinese
+```
+
+## 许可证
 
 MIT
