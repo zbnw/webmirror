@@ -6,13 +6,11 @@ const RATE_LIMIT_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
 const EDGE_TTL = {
   asset: 7 * 24 * 60 * 60,
-  page: 60,
   search: 30
 };
 
 const BROWSER_TTL = {
   asset: 24 * 60 * 60,
-  page: 30,
   search: 0
 };
 
@@ -67,6 +65,19 @@ export default {
 
     if (clientUrl.pathname === '/robots.txt') {
       return robotsTxt();
+    }
+
+    if (isLocalHomeRequest(request, clientUrl)) {
+      return localSearchHome();
+    }
+
+    const outboundRedirect = directOutboundRedirect(clientUrl);
+    if (outboundRedirect) {
+      return outboundRedirect;
+    }
+
+    if (clientUrl.pathname.startsWith('/sorry')) {
+      return googleBlockedResponse();
     }
 
     const rateLimitResponse = checkRateLimit(request);
@@ -140,8 +151,170 @@ function normalizeSearchUrl(url) {
     url.searchParams.set('hl', 'zh-CN');
   }
 
-  if (!url.searchParams.has('gbv')) {
-    url.searchParams.set('gbv', '1');
+  if (isSearchUrl(url)) {
+    url.searchParams.set('pws', '0');
+    url.searchParams.set('igu', '1');
+  }
+
+  url.searchParams.delete('gbv');
+}
+
+function isLocalHomeRequest(request, url) {
+  return request.method.toUpperCase() === 'GET'
+    && (url.pathname === '/' || url.pathname === '/webhp')
+    && !url.searchParams.has('q');
+}
+
+function localSearchHome() {
+  const html = `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
+  <title>Google Search Mirror</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f8fafc;
+      color: #111827;
+    }
+    main {
+      width: min(720px, calc(100vw - 32px));
+      text-align: center;
+    }
+    h1 {
+      margin: 0 0 28px;
+      font-size: clamp(32px, 8vw, 72px);
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+    form {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    input {
+      flex: 1;
+      height: 46px;
+      border: 1px solid #d1d5db;
+      border-radius: 24px;
+      padding: 0 18px;
+      font-size: 16px;
+      outline: none;
+      background: white;
+      color: #111827;
+    }
+    button {
+      height: 46px;
+      border: 0;
+      border-radius: 24px;
+      padding: 0 20px;
+      font-size: 15px;
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+    }
+    p {
+      margin: 18px 0 0;
+      color: #6b7280;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    @media (max-width: 560px) {
+      form { flex-direction: column; }
+      input, button { width: 100%; box-sizing: border-box; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Google</h1>
+    <form action="/search" method="get" autocomplete="off">
+      <input name="q" type="search" autofocus required placeholder="Search keywords">
+      <button type="submit">Search</button>
+    </form>
+    <p>Anonymous search only. Login, account, history, and preferences are not supported.</p>
+  </main>
+</body>
+</html>`;
+
+  const headers = new Headers({
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'public, max-age=300'
+  });
+
+  setRobotsHeaders(headers);
+  headers.set('X-GoogleMirror-Cache', 'LOCAL');
+  return new Response(html, { status: 200, headers });
+}
+
+function directOutboundRedirect(url) {
+  if (url.pathname !== '/url') {
+    return null;
+  }
+
+  const target = url.searchParams.get('q') || url.searchParams.get('url');
+  if (!target || !/^https?:\/\//i.test(target)) {
+    return null;
+  }
+
+  const headers = new Headers({
+    location: target,
+    'cache-control': 'private, no-store'
+  });
+
+  setRobotsHeaders(headers);
+  return new Response(null, { status: 302, headers });
+}
+
+function googleBlockedResponse() {
+  const html = `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
+  <title>Google Traffic Challenge</title>
+  <style>
+    body { margin: 0; padding: 32px; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.7; color: #111827; background: #f8fafc; }
+    main { max-width: 720px; margin: 12vh auto 0; background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 28px; }
+    h1 { margin: 0 0 12px; font-size: 24px; }
+    p { margin: 10px 0; }
+    a { color: #2563eb; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Google returned a traffic challenge</h1>
+    <p>This usually means Google flagged the Cloudflare Worker egress IP as datacenter traffic.</p>
+    <p>The mirror now avoids loading the Google home page and reduces extra resource requests, but a pure Cloudflare Worker cannot control the upstream egress IP and cannot guarantee bypassing Google's traffic checks.</p>
+    <p><a href="/">Back to search</a></p>
+  </main>
+</body>
+</html>`;
+
+  const headers = new Headers({
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'private, no-store'
+  });
+
+  setRobotsHeaders(headers);
+  headers.set('X-GoogleMirror-Cache', 'BLOCKED');
+  return new Response(html, { status: 429, headers });
+}
+
+function isGoogleSorryLocation(location) {
+  try {
+    const url = new URL(location, `https://${PRIMARY_HOST}`);
+    return url.pathname.startsWith('/sorry');
+  } catch {
+    return location.includes('/sorry/');
   }
 }
 
@@ -212,6 +385,10 @@ async function toClientResponse(response, context) {
   }
 
   let body = await response.text();
+  if (isGoogleSorryBody(body)) {
+    return googleBlockedResponse();
+  }
+
   body = rewriteText(body, context.proxyOrigin, context.proxyHost);
 
   headers.delete('content-length');
@@ -259,6 +436,10 @@ function rewriteRedirect(response, headers, context) {
     return null;
   }
 
+  if (isGoogleSorryLocation(location)) {
+    return googleBlockedResponse();
+  }
+
   headers.set('location', rewriteUrl(location, context.proxyOrigin));
   headers.delete('content-length');
   setCacheHeaders(headers, context.cachePolicy);
@@ -290,15 +471,6 @@ function getCachePolicy(request, upstreamUrl, route) {
       kind: 'search',
       edgeTtl: EDGE_TTL.search,
       browserTtl: BROWSER_TTL.search,
-      immutable: false
-    };
-  }
-
-  if (upstreamUrl.hostname === PRIMARY_HOST && ['/', '/webhp'].includes(upstreamUrl.pathname)) {
-    return {
-      kind: 'page',
-      edgeTtl: EDGE_TTL.page,
-      browserTtl: BROWSER_TTL.page,
       immutable: false
     };
   }
@@ -341,6 +513,12 @@ function isSearchUrl(url) {
   return url.hostname === PRIMARY_HOST
     && ['/search', '/m/search'].includes(url.pathname)
     && url.searchParams.has('q');
+}
+
+function isGoogleSorryBody(body) {
+  return body.includes('/sorry/')
+    || body.includes('Our systems have detected unusual traffic')
+    || body.includes('unusual traffic');
 }
 
 function isCacheableAsset(url) {
