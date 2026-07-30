@@ -17,8 +17,11 @@ WebMirror 关注的是公共知识的可达性。它不会修改百科正文内�
 - 代理常见 Wikimedia 图片、样式、脚本、地图、元维基、共享资源等域名。
 - 自动改写 HTML、CSS、JavaScript、JSON 和重定向中的链接，使浏览过程保持在镜像域名下。
 - 对图片、字体、样式、脚本等静态资源启用缓存，提高重复访问速度。
+- 使用 Cloudflare Cache API 缓存匿名访问结果，减少 Worker CPU 消耗和上游回源。
 - 移除原站绑定域名的 CSP、HSTS、X-Frame-Options 等响应头，避免镜像页面加载失败。
 - 对 Cookie 做保守改写，尽量改善会话兼容性。
+- 内置轻量限流，降低异常访问对 Worker 和上游站点的压力。
+- 默认拒绝搜索引擎收录，避免镜像页进入搜索索引。
 
 ## 路由映射
 
@@ -34,6 +37,41 @@ WebMirror 关注的是公共知识的可达性。它不会修改百科正文内�
 | `/commons_wikimedia/` | `https://commons.wikimedia.org/` |
 | `/www_wikipedia/` | `https://www.wikipedia.org/` |
 | `/api_rest/` | `https://api.wikimedia.org/` |
+
+## 性能与缓存策略
+
+WebMirror 以“匿名阅读访问更快、登录和动态操作不缓存”为原则：
+
+| 内容类型 | Cloudflare 边缘缓存 | 浏览器缓存 | 说明 |
+| --- | ---: | ---: | --- |
+| 图片、字体、静态文件 | 30 天 | 7 天 | 适合长期缓存，显著减少回源 |
+| MediaWiki `load.php` 样式/脚本模块 | 7 天 | 1 天 | 维基页面大量依赖该接口，缓存后首屏更快 |
+| 匿名词条页面 | 5 分钟 | 60 秒 | 缓存改写后的 HTML，降低 Worker CPU 和回源请求 |
+| 登录、编辑、带 Cookie 请求 | 不缓存 | 不缓存 | 避免会话污染和账号风险 |
+| POST/PUT/PATCH/DELETE 请求 | 不缓存 | 不缓存 | 保持动态操作实时转发 |
+
+代码会给响应添加 `X-WebMirror-Cache` 头，便于排查缓存状态：
+
+```txt
+HIT     命中 Worker Cache API
+MISS    可缓存但本次未命中
+BYPASS  登录态、动态请求或不适合缓存
+```
+
+## 限流与保护
+
+默认限流为每个 IP 每分钟 360 个请求。这个阈值对少量用户阅读使用比较宽松，可以覆盖页面首次加载时的大量图片、样式和脚本请求，同时能拦住明显异常的高频访问。
+
+限流是 Worker 内存级的轻量保护，不依赖数据库或 KV。它适合个人、小范围使用场景；如果未来公开给大量用户访问，建议再接入 Cloudflare WAF、Turnstile、Rate Limiting Rules 或 KV/Durable Objects 做更严格的全局限流。
+
+## 搜索引擎收录
+
+项目默认拒绝搜索引擎收录：
+
+- `/robots.txt` 返回 `Disallow: /`。
+- 所有响应都会附带 `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex`。
+
+这样可以避免镜像页面被搜索引擎索引，减少不必要流量，也降低与原站内容重复带来的问题。
 
 ## 关于登录
 
@@ -85,6 +123,14 @@ webmirror/
 默认不需要环境变量。需要增加或移除上游域名时，编辑 `src/worker.js` 里的 `ROUTES` 和 `HOST_TO_PREFIX` 相关配置即可。
 
 建议保持路由前缀固定、明确，不要改造成任意 URL 都可代理的开放代理。
+
+如需调整性能参数，可修改 `src/worker.js` 顶部常量：
+
+```js
+RATE_LIMIT_MAX_REQUESTS
+EDGE_TTL
+BROWSER_TTL
+```
 
 ## 正向使用
 
