@@ -1,0 +1,15 @@
+{
+  "name": "webmirror",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A Cloudflare Workers mirror gateway for Chinese Wikipedia and Wikimedia resources.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "node --check src/worker.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
