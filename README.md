@@ -111,32 +111,11 @@ npm run deploy
 ```txt
 webmirror/
 ├── src/worker.js        # Cloudflare Worker 主代码
-├── src/google-worker.js # Google 搜索镜像 Worker，只保证搜索可用
 ├── optimized-worker.js  # 兼容入口，导出 src/worker.js
-├── google-worker.js     # Google 搜索镜像兼容入口
 ├── wrangler.toml        # Cloudflare Workers 配置
 ├── package.json         # 项目脚本和依赖
 ├── README.md            # 中文说明文档
 └── LICENSE              # MIT License
-```
-
-## Google 搜索镜像
-
-项目额外提供 `src/google-worker.js`，用于镜像 Google 搜索页面。这个文件是独立 Worker，不影响中文维基镜像。
-
-Google 搜索镜像只以“搜索引擎可用”为目标：
-
-- 默认代理 `www.google.com`。
-- 代理常见 Google 静态资源域名，例如 `www.gstatic.com`、`ssl.gstatic.com`、`fonts.gstatic.com`、`fonts.googleapis.com`。
-- 不处理 Google 登录、账号、历史记录、偏好设置等路径。
-- 搜索结果短缓存 30 秒，首页短缓存 60 秒，静态资源缓存 7 天。
-- 每 IP 每分钟 240 请求限流。
-- 默认返回 `/robots.txt` 禁止收录，并给所有响应添加 `X-Robots-Tag`。
-
-如果只想部署 Google 搜索镜像，可以把 `wrangler.toml` 的入口改成：
-
-```toml
-main = "src/google-worker.js"
 ```
 
 ## 配置说明
@@ -152,8 +131,6 @@ RATE_LIMIT_MAX_REQUESTS
 EDGE_TTL
 BROWSER_TTL
 ```
-
-Google 搜索镜像对应参数在 `src/google-worker.js` 顶部。
 
 ## 正向使用
 
